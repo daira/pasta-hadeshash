@@ -98,7 +98,13 @@ def generate_constants(field, n, t, R_F, R_P, prime_number):
             round_constants.append(random_int)
     return round_constants
 
-def print_round_constants(round_constants, n, field):
+def print_hex256(c):
+    print("        pallas::Base::from_raw([")
+    for i in range(0, 256, 64):
+        print("            0x%04x_%04x_%04x_%04x," % tuple([(c >> j) & 0xFFFF for j in range(i+48, i-1, -16)]))
+    print("        ]),")
+
+def print_round_constants(round_constants, n, t, field):
     print("Number of round constants:", len(round_constants))
 
     if field == 0:
@@ -106,7 +112,14 @@ def print_round_constants(round_constants, n, field):
     elif field == 1:
         print("Round constants for GF(p):")
     hex_length = int(ceil(float(n) / 4)) + 2 # +2 for "0x"
-    print(["{0:#0{1}x}".format(entry, hex_length) for entry in round_constants])
+
+    assert len(round_constants) % t == 0
+    rounds = len(round_constants) // t  # R_F + R_P
+    for r in range(rounds):
+        print("    [")
+        for entry in round_constants[r*t : (r+1)*t]:
+            print_hex256(entry)
+        print("    ],")
 
 def create_mds_p(n, t):
     M = matrix(F, t, t)
@@ -324,7 +337,7 @@ init_generator(FIELD, SBOX, FIELD_SIZE, NUM_CELLS, R_F_FIXED, R_P_FIXED)
 
 # Round constants
 round_constants = generate_constants(FIELD, FIELD_SIZE, NUM_CELLS, R_F_FIXED, R_P_FIXED, PRIME_NUMBER)
-print_round_constants(round_constants, FIELD_SIZE, FIELD)
+print_round_constants(round_constants, FIELD_SIZE, NUM_CELLS, FIELD)
 
 # Matrix
 linear_layer = generate_matrix(FIELD, FIELD_SIZE, NUM_CELLS)
