@@ -316,6 +316,17 @@ def generate_matrix(FIELD, FIELD_SIZE, NUM_CELLS):
             result_3 = algorithm_3(mds_matrix, NUM_CELLS)
         return mds_matrix
 
+def invert_matrix(M):
+    MS = MatrixSpace(F, NUM_CELLS, NUM_CELLS, sparse=False)
+    return MS.matrix(M).inverse()
+
+def print_matrix_hex256(M):
+    for row in range(NUM_CELLS):
+        print("    [")
+        for entry in M[row]:
+            print_hex256(entry)
+        print("    ],")
+
 def print_linear_layer(M, n, t):
     print("n:", n)
     print("t:", t)
@@ -327,11 +338,10 @@ def print_linear_layer(M, n, t):
     print("Prime number:", "0x" + hex(PRIME_NUMBER))
 
     print("MDS matrix:")
-    for row in range(NUM_CELLS):
-        print("    [")
-        for entry in M[row]:
-            print_hex256(entry)
-        print("    ],")
+    print_matrix_hex256(M)
+
+    print("Inverse MDS matrix:")
+    print_matrix_hex256(invert_matrix(M))
 
 # Init
 init_generator(FIELD, SBOX, FIELD_SIZE, NUM_CELLS, R_F_FIXED, R_P_FIXED)
