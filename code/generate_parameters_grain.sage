@@ -99,6 +99,7 @@ def generate_constants(field, n, t, R_F, R_P, prime_number):
     return round_constants
 
 def print_hex256(c):
+    c = int(c)
     print("        pallas::Base::from_raw([")
     for i in range(0, 256, 64):
         print("            0x%04x_%04x_%04x_%04x," % tuple([(c >> j) & 0xFFFF for j in range(i+48, i-1, -16)]))
@@ -324,13 +325,13 @@ def print_linear_layer(M, n, t):
     print("Result Algorithm 3:\n", algorithm_3(M, NUM_CELLS))
     hex_length = int(ceil(float(n) / 4)) + 2 # +2 for "0x"
     print("Prime number:", "0x" + hex(PRIME_NUMBER))
-    matrix_string = "["
-    for i in range(0, t):
-        matrix_string += str(["{0:#0{1}x}".format(int(entry), hex_length) for entry in M[i]])
-        if i < (t-1):
-            matrix_string += ","
-    matrix_string += "]"
-    print("MDS matrix:\n", matrix_string)
+
+    print("MDS matrix:")
+    for row in range(NUM_CELLS):
+        print("    [")
+        for entry in M[row]:
+            print_hex256(entry)
+        print("    ],")
 
 # Init
 init_generator(FIELD, SBOX, FIELD_SIZE, NUM_CELLS, R_F_FIXED, R_P_FIXED)
