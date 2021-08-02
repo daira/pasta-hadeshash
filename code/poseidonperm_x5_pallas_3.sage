@@ -2,7 +2,7 @@
 
 t = 3
 R_F = 8
-R_P = 58
+R_P = 56
 prime = 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000001
 n = len(format(prime, 'b'))
 F = GF(prime)
