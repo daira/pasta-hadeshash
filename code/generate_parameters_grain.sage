@@ -13,30 +13,15 @@ from sage.rings.polynomial.polynomial_gf2x import GF2X_BuildIrred_list
 # GF(p), alpha=5, N = 762, n = 254, t = 3, R_F = 8, R_P = 57: sage generate_parameters_grain.sage 1 0 254 3 8 57 0x30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000001
 # GF(p), alpha=5, N = 1270, n = 254, t = 5, R_F = 8, R_P = 60: sage generate_parameters_grain.sage 1 0 254 5 8 60 0x30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000001
 
-if len(sys.argv) < 7:
-    print("Usage: <script> <field> <s_box> <field_size> <num_cells> <R_F> <R_P> (<prime_number_hex>)")
-    print("field = 1 for GF(p)")
-    print("s_box = 0 for x^alpha, s_box = 1 for x^(-1)")
-    exit()
-
-# Parameters
-FIELD = int(sys.argv[1]) # 0 .. GF(2^n), 1 .. GF(p)
-SBOX = int(sys.argv[2]) # 0 .. x^alpha, 1 .. x^(-1)
-FIELD_SIZE = int(sys.argv[3]) # n
-NUM_CELLS = int(sys.argv[4]) # t
-R_F_FIXED = int(sys.argv[5])
-R_P_FIXED = int(sys.argv[6])
-
-INIT_SEQUENCE = []
-
-PRIME_NUMBER = 0
-if FIELD == 1 and len(sys.argv) != 8:
-    print("Please specify a prime number (in hex format)!")
-    exit()
-elif FIELD == 1 and len(sys.argv) == 8:
-    PRIME_NUMBER = int(sys.argv[7], 16) # e.g. 0xa7, 0xFFFFFFFFFFFFFEFF, 0xa1a42c3efd6dbfe08daa6041b36322ef
-
-F = GF(PRIME_NUMBER)
+FIELD = None
+SBOX = None
+FIELD_SIZE = None
+NUM_CELLS = None
+R_F_FIXED = None
+R_P_FIXED = None
+PRIME_NUMBER = None
+F = None
+INIT_SEQUENCE = None
 
 def grain_sr_generator():
     bit_sequence = INIT_SEQUENCE
@@ -98,29 +83,32 @@ def generate_constants(field, n, t, R_F, R_P, prime_number):
             round_constants.append(random_int)
     return round_constants
 
-def print_hex256(c):
+def print_hex(c, last, rust=False):
     c = int(c)
-    print("        pallas::Base::from_raw([")
-    for i in range(0, 256, 64):
-        print("            0x%04x_%04x_%04x_%04x," % tuple([(c >> j) & 0xFFFF for j in range(i+48, i-1, -16)]))
-    print("        ]),")
+    if rust:
+        print("        pallas::Base::from_raw([")
+        for i in range(0, FIELD_SIZE, 64):
+            print("            0x%04x_%04x_%04x_%04x," % tuple([(c >> j) & 0xFFFF for j in range(i+48, i-1, -16)]))
+        print("        ]),")
+    else:
+        hex_length = (FIELD_SIZE + 3)//4 + 2 # +2 for "0x"
+        print("{0:#0{1}x}".format(c, hex_length), end="" if last else ", ")
 
-def print_round_constants(round_constants, n, t, field):
+def print_round_constants(round_constants, n, t, field, rust=False):
     print("Number of round constants:", len(round_constants))
 
     if field == 0:
         print("Round constants for GF(2^n):")
     elif field == 1:
         print("Round constants for GF(p):")
-    hex_length = int(ceil(float(n) / 4)) + 2 # +2 for "0x"
 
     assert len(round_constants) % t == 0
     rounds = len(round_constants) // t  # R_F + R_P
     for r in range(rounds):
-        print("    [")
-        for entry in round_constants[r*t : (r+1)*t]:
-            print_hex256(entry)
-        print("    ],")
+        print("    [", end="\n" if rust else "")
+        for (i, entry) in enumerate(round_constants[r*t : (r+1)*t]):
+            print_hex(entry, i == t-1, rust=rust)
+        print("    ]," if rust else "],")
 
 def create_mds_p(n, t):
     M = matrix(F, t, t)
@@ -320,36 +308,69 @@ def invert_matrix(M):
     MS = MatrixSpace(F, NUM_CELLS, NUM_CELLS, sparse=False)
     return MS.matrix(M).inverse()
 
-def print_matrix_hex256(M):
-    for row in range(NUM_CELLS):
-        print("    [")
-        for entry in M[row]:
-            print_hex256(entry)
-        print("    ],")
+def print_matrix(M, t, rust=False):
+    for row in range(t):
+        print("    [", end="\n" if rust else "")
+        for (i, entry) in enumerate(M[row]):
+            print_hex(entry, i == t-1, rust=rust)
+        print("    ]," if rust else "],")
 
-def print_linear_layer(M, n, t):
+def print_linear_layer(M, n, t, rust=False):
     print("n:", n)
     print("t:", t)
     print("N:", (n * t))
     print("Result Algorithm 1:\n", algorithm_1(M, NUM_CELLS))
     print("Result Algorithm 2:\n", algorithm_2(M, NUM_CELLS))
     print("Result Algorithm 3:\n", algorithm_3(M, NUM_CELLS))
-    hex_length = int(ceil(float(n) / 4)) + 2 # +2 for "0x"
     print("Prime number:", "0x" + hex(PRIME_NUMBER))
 
     print("MDS matrix:")
-    print_matrix_hex256(M)
+    print_matrix(M, t, rust=rust)
 
     print("Inverse MDS matrix:")
-    print_matrix_hex256(invert_matrix(M))
+    print_matrix(invert_matrix(M), t, rust=rust)
 
-# Init
-init_generator(FIELD, SBOX, FIELD_SIZE, NUM_CELLS, R_F_FIXED, R_P_FIXED)
+def main(args):
+    if len(args) < 6:
+        print("Usage: sage generate_parameters_grain.sage <field> <s_box> <field_size> <num_cells> <R_F> <R_P> (<prime_number_hex>) [--rust]")
+        print("field = 1 for GF(p)")
+        print("s_box = 0 for x^alpha, s_box = 1 for x^(-1)")
+        return
 
-# Round constants
-round_constants = generate_constants(FIELD, FIELD_SIZE, NUM_CELLS, R_F_FIXED, R_P_FIXED, PRIME_NUMBER)
-print_round_constants(round_constants, FIELD_SIZE, NUM_CELLS, FIELD)
+    # Parameters
+    global FIELD, SBOX, FIELD_SIZE, NUM_CELLS, R_F_FIXED, R_P_FIXED, PRIME_NUMBER, F
 
-# Matrix
-linear_layer = generate_matrix(FIELD, FIELD_SIZE, NUM_CELLS)
-print_linear_layer(linear_layer, FIELD_SIZE, NUM_CELLS)
+    FIELD = int(args[0]) # 0 .. GF(2^n), 1 .. GF(p)
+    SBOX = int(args[1]) # 0 .. x^alpha, 1 .. x^(-1)
+    FIELD_SIZE = int(args[2]) # n
+    NUM_CELLS = int(args[3]) # t
+    R_F_FIXED = int(args[4])
+    R_P_FIXED = int(args[5])
+
+    PRIME_NUMBER = 0
+    if FIELD == 0:
+        args = args[6:]
+    elif FIELD == 1 and len(args) < 7:
+        print("Please specify a prime number (in hex format)!")
+        return
+    elif FIELD == 1 and len(args) >= 7:
+        PRIME_NUMBER = int(args[6], 16) # e.g. 0xa7, 0xFFFFFFFFFFFFFEFF, 0xa1a42c3efd6dbfe08daa6041b36322ef
+        args = args[7:]
+
+    F = GF(PRIME_NUMBER)
+
+    rust = '--rust' in args
+
+    # Init
+    init_generator(FIELD, SBOX, FIELD_SIZE, NUM_CELLS, R_F_FIXED, R_P_FIXED)
+
+    # Round constants
+    round_constants = generate_constants(FIELD, FIELD_SIZE, NUM_CELLS, R_F_FIXED, R_P_FIXED, PRIME_NUMBER)
+    print_round_constants(round_constants, FIELD_SIZE, NUM_CELLS, FIELD, rust=rust)
+
+    # Matrix
+    linear_layer = generate_matrix(FIELD, FIELD_SIZE, NUM_CELLS)
+    print_linear_layer(linear_layer, FIELD_SIZE, NUM_CELLS, rust=rust)
+
+if __name__ == "__main__":
+    main(sys.argv[1:])
